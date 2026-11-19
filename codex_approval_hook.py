@@ -360,6 +360,7 @@ def windows_install_command(arguments, *, executable=None, missing_python_output
     encoded_arguments = base64.b64encode(json.dumps(launch).encode("ascii")).decode("ascii")
     program = (
         "$ErrorActionPreference = 'Stop'\n"
+        "$ProgressPreference = 'SilentlyContinue'\n"
         f"$launch = ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded_arguments}')))\n"
     )
     if missing_python_output is not None:
