@@ -24,6 +24,23 @@ SOURCE = Path(approval_hook.__file__).resolve()
 
 
 class ApprovalHookTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "win32", "requires Windows PowerShell")
+    def test_windows_hook_command_preserves_stdin(self):
+        payload = '{"name":"노트"}'.encode("utf-8")
+        command = approval_hook.windows_install_command(
+            [sys.executable, "-I", "-X", "utf8", "-c",
+             "import sys; print(sys.stdin.buffer.read().hex()); print(sys.argv[1])",
+             "argument with spaces"],
+        )
+        result = subprocess.run(
+            command.split(), input=payload, capture_output=True, check=True, timeout=15,
+        )
+        self.assertEqual(
+            result.stdout.decode("ascii").splitlines(),
+            [payload.hex(), "argument with spaces"],
+            result.stderr.decode("utf-8", errors="replace"),
+        )
+
     def test_global_registration_and_removal(self):
         for agent, settings in (
             ("--codex", "custom-codex/hooks.json"),
