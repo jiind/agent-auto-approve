@@ -322,17 +322,25 @@ def write_atomically(path, data):
 
 
 def windows_install_command(arguments, *, executable=None):
-    # Invoke the installed interpreter by absolute path and forward the hook's UTF-8 JSON.
-    encoded_arguments = base64.b64encode(json.dumps(arguments).encode("ascii")).decode("ascii")
+    # Forward stdin bytes directly to Python without a PowerShell text pipeline.
+    launch = {"argv": arguments, "command_line": subprocess.list2cmdline(arguments[1:])}
+    encoded_arguments = base64.b64encode(json.dumps(launch).encode("ascii")).decode("ascii")
     program = (
-        "$utf8 = [System.Text.UTF8Encoding]::new($false)\n"
-        "$OutputEncoding = $utf8\n"
-        f"$argv = ConvertFrom-Json ($utf8.GetString([Convert]::FromBase64String('{encoded_arguments}')))\n"
-        "$python = $argv[0]\n"
-        "$hookArgs = $argv[1..($argv.Count - 1)]\n"
-        "$reader = [System.IO.StreamReader]::new([Console]::OpenStandardInput(), $utf8)\n"
-        "$reader.ReadToEnd() | & $python @hookArgs\n"
-        "exit $LASTEXITCODE\n"
+        "$ErrorActionPreference = 'Stop'\n"
+        f"$launch = ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded_arguments}')))\n"
+        "$start = [Diagnostics.ProcessStartInfo]::new()\n"
+        "$start.FileName = $launch.argv[0]\n"
+        "$start.Arguments = $launch.command_line\n"
+        "$start.UseShellExecute = $false\n"
+        "$start.RedirectStandardInput = $true\n"
+        "$process = [Diagnostics.Process]::Start($start)\n"
+        "try {\n"
+        "  $inputStream = $process.StandardInput.BaseStream\n"
+        "  [Console]::OpenStandardInput().CopyTo($inputStream)\n"
+        "  $inputStream.Close()\n"
+        "  $process.WaitForExit()\n"
+        "  exit $process.ExitCode\n"
+        "} finally { $process.Dispose() }\n"
     )
     encoded = base64.b64encode(program.encode("utf-16le")).decode("ascii")
     if executable is None:
@@ -361,6 +369,8 @@ def agy_command_arguments(command):
     if not match:
         return []
     arguments = json.loads(base64.b64decode(match[1], validate=True))
+    if isinstance(arguments, dict):
+        arguments = arguments.get("argv")
     return arguments if isinstance(arguments, list) else []
 
 

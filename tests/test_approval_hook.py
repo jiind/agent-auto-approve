@@ -139,18 +139,18 @@ class ApprovalHookTests(unittest.TestCase):
                 hook_command = shlex.split(handler["command"])
 
             for target, expected in (
-                (workspace / "note.txt", approved),
+                (workspace / "노트.txt", approved),
                 (root / "outside.txt", fallback),
                 (Path("relative.txt"), fallback),
             ):
                 with self.subTest(target=target):
                     result = subprocess.run(
                         hook_command,
-                        cwd=workspace, env=env, input=json.dumps(make_request(workspace, target)),
-                        check=True, capture_output=True, text=True,
+                        cwd=workspace, env=env, input=json.dumps(make_request(workspace, target), ensure_ascii=False),
+                        check=True, capture_output=True, encoding="utf-8",
                     )
                     response = json.loads(result.stdout) if result.stdout else None
-                    self.assertEqual(response, expected)
+                    self.assertEqual(response, expected, result.stderr)
 
             cli("uninstall", agent, ".")
             self.assertEqual(json.loads(config.read_text(encoding="utf-8")), original)
