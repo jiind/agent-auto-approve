@@ -21,7 +21,7 @@ uv tool install agent-auto-approve
 릴리스의 **Assets**에서 wheel 파일(`.whl`)을 다운로드합니다. 다운로드한 폴더에서 아래 명령을 실행하고, 다른 버전을 받았다면 파일명을 바꿉니다. [GitHub Releases](https://github.com/jiind/agent-auto-approve/releases/latest)
 
 ```sh
-uv tool install ./agent_auto_approve-0.1.1-py3-none-any.whl
+uv tool install ./agent_auto_approve-0.1.2-py3-none-any.whl
 ```
 
 설치가 끝나면 명령이 실행되는지 확인합니다.
@@ -41,6 +41,8 @@ agent-auto-approve install . --workspace-only
 agent-auto-approve hooks .
 ```
 
+Codex 훅을 등록한 뒤 공유 로컬 앱 서버에 연결할 수 있으면 `install`이 설정을 다시 읽도록 요청합니다. 그 서버에 연결된 대화에서는 재시작 없이 새 훅을 불러올 수 있습니다. 별도로 실행 중인 세션에서는 새 Codex 대화를 열면 등록이 적용됩니다. 처음 등록하거나 변경한 훅은 CLI의 `/hooks` 또는 데스크톱 앱의 설정 → 훅에서 검토합니다. [Codex 훅 검토 문서](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)
+
 새 Codex 세션 하나에서 써보려면 해당 프로젝트에서 다음 명령을 실행합니다.
 
 ```sh
@@ -56,9 +58,9 @@ agent-auto-approve install --claude . --workspace-only
 agent-auto-approve hooks --claude .
 ```
 
-Claude Code 세션 하나에만 적용하려면 `agent-auto-approve launch --claude --workspace-only`를 실행합니다.
+Claude Code는 설정 파일 변경을 감시하므로 열린 세션에서도 재시작 없이 훅 변경을 읽습니다. 새 세션 하나에만 적용하려면 `agent-auto-approve launch --claude --workspace-only`를 실행합니다. [Claude Code 설정 갱신](https://code.claude.com/docs/en/settings#when-edits-take-effect)
 
-Antigravity CLI는 `--agy`로 선택합니다. `.agents`가 있는 프로젝트 루트에서 훅을 등록하고 확인한 뒤 `agy`를 실행합니다. [Antigravity CLI 공식 문서](https://antigravity.google/docs/cli/reference/)
+Antigravity CLI는 `--agy`로 선택합니다. `.agents`가 있는 프로젝트 루트에서 훅을 등록하고 확인한 뒤 `agy`를 실행합니다. 세션이 불러온 훅은 `/hooks`에서 확인할 수 있습니다. [Antigravity 훅 문서](https://antigravity.google/docs/hooks)
 
 ```sh
 agent-auto-approve install --agy . --workspace-only
@@ -111,6 +113,8 @@ Claude Code의 명시적인 거부 규칙, 관리형 훅 설정, 작업 공간 �
 ## 제거
 
 프로젝트 루트에서 `agent-auto-approve uninstall .`을 실행하면 해당 프로젝트의 등록을 제거합니다. 전역 등록은 `agent-auto-approve uninstall`로 제거할 수 있으며, 홈 밖에 설정한 전역 등록도 이 명령에 해당합니다. Claude Code는 `--claude`, Antigravity는 `--agy`를 붙입니다. 이 도구가 제거하는 범위는 자신이 등록한 훅입니다.
+
+제거된 훅을 이미 불러온 세션도 일반 승인 흐름을 계속 사용할 수 있습니다. Codex의 공유 로컬 앱 서버는 제거도 즉시 반영할 수 있습니다. 이전 버전에서 등록한 훅을 `uninstall`하면 열린 세션을 위해 호환용 스크립트를 남깁니다. 해당 세션이 기억한 훅 명령에는 CLI의 Python 경로가 들어 있으므로 CLI까지 제거할 때는 세션을 먼저 종료합니다.
 
 등록된 훅을 제거한 뒤 다음 명령으로 CLI를 제거할 수 있습니다.
 
