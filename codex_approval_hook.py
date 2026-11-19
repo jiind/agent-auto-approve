@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -23,6 +24,24 @@ from urllib.request import url2pathname
 
 
 HOOK_FILENAME = "codex_approval_hook.py"
+AGY_ALLOW_OUTPUT = json.dumps({"decision": "allow"})
+HOOK_SHELL = 'if [ -x "$1" ]; then exec "$@"; fi'
+HOOK_RUNNER = """\
+import sys
+sys.argv.pop(0)
+__file__ = sys.argv[0]
+try:
+    with open(__file__, "rb") as script:
+        source = script.read()
+except FileNotFoundError:
+{fallback}    sys.exit(0)
+exec(compile(source, __file__, "exec"))
+"""
+DISABLED_CODEX_HOOK = b"# agent-auto-approve: unregistered Codex hook.\n"
+LEGACY_SCRIPT_MARKER = b"\n# Earlier agent sessions may still run this script directly.\n"
+LEGACY_SCRIPT_MARKERS = (
+    LEGACY_SCRIPT_MARKER, b"\n# Earlier Codex sessions may still run this script directly.\n",
+)
 AGY_HOOK_NAME = "codex-auto-approve"
 POWERSHELL_FLAGS = "-NoLogo -NoProfile -NonInteractive -EncodedCommand"
 AGY_FILE_PATHS = {
@@ -287,8 +306,20 @@ def workspace_arguments(workspace):
     return ["--workspace-root-hex", os.fsencode(workspace).hex()]
 
 
-def python_arguments(script, hook_args):
-    return [sys.executable, "-I", "-X", "utf8", str(script), *hook_args]
+def python_arguments(script, hook_args, *, options=()):
+    return [sys.executable, "-I", "-X", "utf8", *options, str(script), *hook_args]
+
+
+def hook_runner_options(agent):
+    fallback = f"    print({AGY_ALLOW_OUTPUT!r})\n" if agent is AGY else ""
+    return ["-c", HOOK_RUNNER.format(fallback=fallback)]
+
+
+def hook_shell_prefix(agent):
+    program = HOOK_SHELL
+    if agent is AGY:
+        program += "\nprintf '%s\\n' " + shlex.quote(AGY_ALLOW_OUTPUT)
+    return ["/bin/sh", "-c", program, "agent-auto-approve"]
 
 
 def hook_command(script, env, *, windows, hook_args):
@@ -321,13 +352,21 @@ def write_atomically(path, data):
         staged.replace(path)
 
 
-def windows_install_command(arguments, *, executable=None):
+def windows_install_command(arguments, *, executable=None, missing_python_output=None):
     # Redirect stdout so .NET passes the original stdin handle without a BOM.
     launch = {"argv": arguments, "command_line": subprocess.list2cmdline(arguments[1:])}
+    if missing_python_output:
+        launch["fallback"] = missing_python_output
     encoded_arguments = base64.b64encode(json.dumps(launch).encode("ascii")).decode("ascii")
     program = (
         "$ErrorActionPreference = 'Stop'\n"
+        "$ProgressPreference = 'SilentlyContinue'\n"
         f"$launch = ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded_arguments}')))\n"
+    )
+    if missing_python_output is not None:
+        output = "[Console]::WriteLine($launch.fallback); " if missing_python_output else ""
+        program += "if (-not [IO.File]::Exists($launch.argv[0])) { " + output + "exit 0 }\n"
+    program += (
         "$start = [Diagnostics.ProcessStartInfo]::new()\n"
         "$start.FileName = $launch.argv[0]\n"
         "$start.Arguments = $launch.command_line\n"
@@ -350,19 +389,21 @@ def windows_install_command(arguments, *, executable=None):
 
 
 def agy_hook(script, hook_args):
-    arguments = python_arguments(script, ["--agy-hook", *hook_args])
+    arguments = python_arguments(script, ["--agy-hook", *hook_args], options=hook_runner_options(AGY))
     command = (
-        windows_install_command(arguments, executable="powershell.exe")
-        if sys.platform == "win32" else shlex.join(arguments)
+        windows_install_command(arguments, executable="powershell.exe", missing_python_output=AGY_ALLOW_OUTPUT)
+        if sys.platform == "win32" else shlex.join([*hook_shell_prefix(AGY), *arguments])
     )
     return {"type": "command", "command": command, "timeout": 5}
 
 
-def agy_command_arguments(command):
-    prefix = f"powershell.exe {POWERSHELL_FLAGS} "
-    if not command.startswith(prefix):
-        return shlex.split(command)
-    program = base64.b64decode(command[len(prefix):], validate=True).decode("utf-16le")
+def decode_hook_arguments(arguments):
+    if not arguments or arguments[0].replace("\\", "/").rsplit("/", 1)[-1].lower() != "powershell.exe":
+        return arguments
+    flags = POWERSHELL_FLAGS.split()
+    if arguments[1:-1] != flags:
+        return arguments
+    program = base64.b64decode(arguments[-1], validate=True).decode("utf-16le")
     match = re.search(r"FromBase64String\('([A-Za-z0-9+/=]+)'\)", program)
     if not match:
         return []
@@ -372,8 +413,15 @@ def agy_command_arguments(command):
     return arguments if isinstance(arguments, list) else []
 
 
-def claude_hook(script, hook_args):
-    command, *arguments = python_arguments(script, ["--claude-hook", *hook_args])
+def claude_hook(script, hook_args, *, permanent=False):
+    options = hook_runner_options(CLAUDE) if permanent else ()
+    arguments = python_arguments(script, ["--claude-hook", *hook_args], options=options)
+    if permanent:
+        if sys.platform == "win32":
+            arguments = windows_install_command(arguments, missing_python_output="").split()
+        else:
+            arguments = [*hook_shell_prefix(CLAUDE), *arguments]
+    command, *arguments = arguments
     return {
         "type": "command",
         "command": command,
@@ -405,31 +453,46 @@ def lock_hook_config(directory):
         lock.unlink(missing_ok=True)
 
 
+def configured_hook_arguments(handler, agent):
+    command = handler.get("command")
+    if not isinstance(command, str):
+        return []
+    try:
+        if agent is CLAUDE:
+            args = handler.get("args")
+            if not isinstance(args, list):
+                return []
+            arguments = [command, *args]
+        else:
+            arguments = shlex.split(command)
+        return decode_hook_arguments(arguments)
+    except (TypeError, ValueError):
+        return []
+
+
 def installed_hook_arguments(handler, script, agent):
     if not isinstance(handler, dict) or handler.get("type") != "command":
         return None
     if agent is not AGY and handler.get("statusMessage") != agent.hook_status:
         return None
-    command = handler.get("command")
-    if not isinstance(command, str):
-        return None
+    arguments = configured_hook_arguments(handler, agent)
+    prefix = hook_shell_prefix(agent)
+    if arguments[:len(prefix)] == prefix:
+        arguments = arguments[len(prefix):]
+    expected = ["-I", "-X", "utf8"]
+    options = hook_runner_options(agent)
+    guarded = arguments[4:6] == options
+    if guarded:
+        expected.extend(options)
+    expected.append(str(script))
     if agent is CLAUDE:
-        arguments = handler.get("args")
-        expected = ["-I", "-X", "utf8", str(script), "--claude-hook"]
-        if isinstance(arguments, list) and arguments[:len(expected)] == expected:
-            return arguments[len(expected):]
-        return None
-    try:
-        arguments = agy_command_arguments(command) if agent is AGY else shlex.split(command)
-    except ValueError:
-        return None
-    expected = ["-I", "-X", "utf8", str(script)]
-    if agent is AGY:
+        expected.append("--claude-hook")
+    elif agent is AGY:
         expected.append("--agy-hook")
     end = 1 + len(expected)
     if arguments[1:end] != expected:
         return None
-    return arguments[end:]
+    return arguments[end:], guarded
 
 
 def approval_group_keys(agent):
@@ -457,9 +520,10 @@ def register_hook(config, handler, script, agent, filename):
     _, groups = approval_groups(config, filename, agent)
     for group in groups:
         for index, existing in enumerate(group["hooks"]):
-            if installed_hook_arguments(existing, script, agent) is not None:
+            registration = installed_hook_arguments(existing, script, agent)
+            if registration is not None:
                 group["hooks"][index] = handler
-                return True
+                return registration
 
     if existing_name:
         raise FileExistsError(f"{filename} already has a hook named {AGY_HOOK_NAME}.")
@@ -467,25 +531,26 @@ def register_hook(config, handler, script, agent, filename):
     if agent is AGY:
         group["matcher"] = "*"
     groups.append(group)
-    return False
+    return None
 
 
 def unregister_hook(config, script, agent, filename):
     events, groups = approval_groups(config, filename, agent)
     event_key, group_key = approval_group_keys(agent)
     remaining_groups = []
-    removed = False
+    removed = []
     for group in groups:
-        handlers = group["hooks"]
-        remaining = [
-            handler for handler in handlers if installed_hook_arguments(handler, script, agent) is None
-        ]
-        if len(remaining) == len(handlers):
+        remaining = []
+        for handler in group["hooks"]:
+            registration = installed_hook_arguments(handler, script, agent)
+            if registration is None:
+                remaining.append(handler)
+            else:
+                removed.append(registration)
+        if len(remaining) == len(group["hooks"]):
             remaining_groups.append(group)
-        else:
-            removed = True
-            if remaining:
-                remaining_groups.append({**group, "hooks": remaining})
+        elif remaining:
+            remaining_groups.append({**group, "hooks": remaining})
     if removed:
         if remaining_groups:
             events[group_key] = remaining_groups
@@ -512,8 +577,9 @@ def installation_at(directory, scope, agent):
         if not isinstance(handlers, list):
             continue
         for handler in handlers:
-            arguments = installed_hook_arguments(handler, script, agent)
-            if arguments is not None:
+            registration = installed_hook_arguments(handler, script, agent)
+            if registration is not None:
+                arguments, _ = registration
                 workspace_only = "--workspace-only" in arguments or "--workspace-root-hex" in arguments
                 return config_path, workspace_only, script.is_file()
     return None
@@ -745,12 +811,55 @@ def registration_location(project, agent):
     return "project", directory
 
 
+def codex_request_succeeded(connection, request_id, method, params):
+    connection.send(json.dumps({"id": request_id, "method": method, "params": params}))
+    deadline = time.monotonic() + 3
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        reply = json.loads(connection.recv(timeout=remaining))
+        if isinstance(reply, dict) and reply.get("id") == request_id and "method" not in reply:
+            return "result" in reply
+
+
+def reload_running_codex():
+    if not hasattr(socket, "AF_UNIX"):
+        return False
+    try:
+        endpoint = (CODEX.home() / "app-server-control" / "app-server-control.sock").resolve()
+        if not endpoint.is_socket():
+            return False
+        from websockets.exceptions import WebSocketException
+        from websockets.sync.client import unix_connect
+    except (ImportError, OSError, RuntimeError):
+        return False
+
+    try:
+        with unix_connect(str(endpoint), open_timeout=2, close_timeout=0.2) as connection:
+            client = {"clientInfo": {"name": "agent-auto-approve", "version": "1"}}
+            if not codex_request_succeeded(connection, 1, "initialize", client):
+                return False
+            connection.send(json.dumps({"method": "initialized"}))
+            params = {"edits": [], "reloadUserConfig": True}
+            return codex_request_succeeded(connection, 2, "config/batchWrite", params)
+    except (OSError, ValueError, WebSocketException):
+        return False
+
+
+def disabled_hook_script(agent):
+    if agent is CODEX:
+        return DISABLED_CODEX_HOOK
+    comment = b"# agent-auto-approve: unregistered hook.\n"
+    if agent is AGY:
+        return comment + f"print({AGY_ALLOW_OUTPUT!r})\n".encode("ascii")
+    return comment
+
+
 def install_hook(project=None, *, workspace_only=False, agent=CODEX):
     scope, directory = registration_location(project, agent)
     if project is None:
         hook_args = ["--workspace-only"] if workspace_only else []
-        if workspace_only and agent is CLAUDE:
-            hook_args.append("${CLAUDE_PROJECT_DIR}")
         directory.mkdir(parents=True, exist_ok=True)
     else:
         hook_args = workspace_arguments(directory.parent) if workspace_only else []
@@ -758,43 +867,78 @@ def install_hook(project=None, *, workspace_only=False, agent=CODEX):
     script = directory / "hooks" / HOOK_FILENAME
     config_path = agent.settings_path(scope, directory)
     if agent is CLAUDE:
-        handler = claude_hook(script, hook_args)
+        handler = claude_hook(script, hook_args, permanent=True)
     elif agent is AGY:
         handler = agy_hook(script, hook_args)
     else:
-        arguments = python_arguments(script, hook_args)
+        arguments = python_arguments(script, hook_args, options=hook_runner_options(CODEX))
         handler = {
             "type": "command",
-            "command": shlex.join(arguments),
+            "command": shlex.join([*hook_shell_prefix(CODEX), *arguments]),
             "timeout": 5,
             "statusMessage": agent.hook_status,
         }
         if sys.platform == "win32":
-            handler["commandWindows"] = windows_install_command(arguments)
+            handler["commandWindows"] = windows_install_command(arguments, missing_python_output="")
 
     with lock_hook_config(directory):
         original = hook_config(config_path)
         updated = deepcopy(original)
-        installed = register_hook(updated, handler, script, agent, config_path.name)
+        previous = register_hook(updated, handler, script, agent, config_path.name)
         source = Path(__file__).read_bytes()
-        if script.exists() and not installed and script.read_bytes() != source:
-            raise FileExistsError(f"An existing hook script would be overwritten: {script}")
+        existing_source = script.read_bytes() if script.exists() else None
+        retired_script = existing_source == disabled_hook_script(agent)
+        keep_legacy_script = (
+            (previous is not None and not previous[1])
+            or retired_script
+            or (existing_source is not None and existing_source.endswith(LEGACY_SCRIPT_MARKERS))
+        )
+        if keep_legacy_script:
+            source += LEGACY_SCRIPT_MARKER
+        if existing_source is not None and previous is None and not retired_script:
+            if existing_source != source:
+                raise FileExistsError(f"An existing hook script would be overwritten: {script}")
         write_atomically(script, source)
         if updated != original:
             write_hook_config(config_path, updated)
     print(f"Registered the {scope} hook in {config_path}")
 
 
-def remove_unused_hook_script(script, config, config_path, agent):
-    if not script.is_file() or script.resolve() != script or HOOK_FILENAME in json.dumps(config):
+def config_references_hook_script(text, script, agent):
+    if HOOK_FILENAME in text:
+        return True
+    if "-EncodedCommand" not in text:
+        return False
+    try:
+        pending = [json.loads(text)]
+    except ValueError:
+        return False
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            if value.get("type") == "command" and str(script) in configured_hook_arguments(value, agent):
+                return True
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            pending.extend(value)
+    return False
+
+
+def remove_unused_hook_script(script, config, config_path, agent, *, leave_disabled=False):
+    if not script.is_file() or script.resolve() != script:
+        return
+    if config_references_hook_script(json.dumps(config), script, agent):
         return
     filenames = (agent.global_settings, agent.project_settings) if agent is CLAUDE else ("config.toml",)
     for filename in filenames:
         other_config = config_path.with_name(filename)
         if other_config != config_path and other_config.is_file():
-            if HOOK_FILENAME in other_config.read_text(encoding="utf-8-sig"):
+            if config_references_hook_script(other_config.read_text(encoding="utf-8-sig"), script, agent):
                 return
-    script.unlink(missing_ok=True)
+    if leave_disabled or script.read_bytes().endswith(LEGACY_SCRIPT_MARKERS):
+        write_atomically(script, disabled_hook_script(agent))
+    else:
+        script.unlink(missing_ok=True)
 
 
 def uninstall_registration(scope, directory, agent):
@@ -803,10 +947,13 @@ def uninstall_registration(scope, directory, agent):
     if config_path.is_file():
         with lock_hook_config(directory):
             config = hook_config(config_path)
-            if unregister_hook(config, script, agent, config_path.name):
+            removed = unregister_hook(config, script, agent, config_path.name)
+            if removed:
+                # An open session can still call the command it loaded before uninstall.
+                leave_disabled = any(not guarded for _, guarded in removed)
+                remove_unused_hook_script(script, config, config_path, agent, leave_disabled=leave_disabled)
                 write_hook_config(config_path, config)
                 print(f"Unregistered the {scope} hook from {config_path}")
-                remove_unused_hook_script(script, config, config_path, agent)
                 return
     print(f"No {scope} approval hook registered in {config_path}")
 
@@ -960,8 +1107,9 @@ def main():
     if not claude_hook_call and arguments == ["--workspace-only"]:
         approve_request(Path.cwd().resolve())
         return 0
-    if claude_hook_call and len(arguments) == 2 and arguments[0] == "--workspace-only":
-        workspace = Path(arguments[1])
+    if claude_hook_call and arguments[:1] == ["--workspace-only"] and len(arguments) <= 2:
+        root = arguments[1] if len(arguments) == 2 else os.environ.get("CLAUDE_PROJECT_DIR", "")
+        workspace = Path(root)
         if workspace.is_absolute():
             approve_request(workspace.resolve(), claude=True)
         return 0
@@ -1051,11 +1199,16 @@ def main():
         if not confirm_with_global_hook(agent):
             return 1
 
-    if args.command == "install":
-        install_hook(args.directory, workspace_only=args.workspace_only, agent=agent)
-    elif args.command == "uninstall":
-        return uninstall_hook(args.directory, all_installations=args.all, agent=agent)
-    elif args.command == "launch":
+    if args.command in ("install", "uninstall"):
+        status = 0
+        if args.command == "install":
+            install_hook(args.directory, workspace_only=args.workspace_only, agent=agent)
+        else:
+            status = uninstall_hook(args.directory, all_installations=args.all, agent=agent)
+        if status == 0 and agent is CODEX and reload_running_codex():
+            print("Requested a hook configuration reload in the running Codex app server.")
+        return status
+    if args.command == "launch":
         launch = launch_claude if agent is CLAUDE else launch_codex
         return launch(workspace_only=args.workspace_only)
     elif args.command == "hooks":

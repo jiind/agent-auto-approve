@@ -1,4 +1,4 @@
-from contextlib import redirect_stderr
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 import io
 import json
 import os
@@ -21,6 +21,14 @@ PERMISSION_ALLOW = {
 }
 EXISTING_HOOK = {"hooks": [{"type": "command", "command": "existing-hook"}]}
 SOURCE = Path(approval_hook.__file__).resolve()
+
+
+def hook_argv(handler):
+    if "args" in handler:
+        return [handler["command"], *handler["args"]]
+    if sys.platform == "win32" and "commandWindows" in handler:
+        return handler["commandWindows"].split()
+    return shlex.split(handler["command"])
 
 
 class ApprovalHookTests(unittest.TestCase):
@@ -90,6 +98,112 @@ class ApprovalHookTests(unittest.TestCase):
             request, PERMISSION_ALLOW, None,
         )
 
+    def test_codex_install_requests_reload_without_editing_user_config(self):
+        for response in ({"result": {}}, {"error": {"message": "Reload unavailable"}}):
+            with self.subTest(response=response), tempfile.TemporaryDirectory() as temporary:
+                settings = Path(temporary).resolve()
+                connection = mock.Mock()
+                connection.recv.side_effect = [
+                    json.dumps({"id": 1, "result": {}}),
+                    json.dumps({"method": "config/changed"}),
+                    json.dumps({"id": 2, **response}),
+                ]
+                output = io.StringIO()
+                arguments = [str(SOURCE), "install", "--workspace-only"]
+                with ExitStack() as stack:
+                    stack.enter_context(mock.patch.object(approval_hook.Agent, "home", return_value=settings))
+                    stack.enter_context(mock.patch.object(sys, "argv", arguments))
+                    stack.enter_context(redirect_stdout(output))
+                    stack.enter_context(mock.patch.object(approval_hook.socket, "AF_UNIX", 1, create=True))
+                    stack.enter_context(mock.patch.object(Path, "is_socket", return_value=True))
+                    connect = stack.enter_context(mock.patch("websockets.sync.client.unix_connect"))
+                    connect.return_value.__enter__.return_value = connection
+                    self.assertEqual(approval_hook.cli(), 0)
+                messages = [json.loads(call.args[0]) for call in connection.send.call_args_list]
+                self.assertEqual([message["method"] for message in messages],
+                                 ["initialize", "initialized", "config/batchWrite"])
+                self.assertEqual(messages[-1]["params"], {"edits": [], "reloadUserConfig": True})
+                self.assertTrue((settings / "hooks.json").is_file())
+                self.assertEqual("Requested a hook configuration reload" in output.getvalue(), "result" in response)
+
+    def test_uninstall_disables_cached_legacy_hook(self):
+        cases = (
+            (approval_hook.CODEX, [], {"hook_event_name": "PermissionRequest"}, None),
+            (approval_hook.CLAUDE, ["--claude-hook"], {"hook_event_name": "PermissionRequest"}, None),
+            (approval_hook.AGY, ["--agy-hook"], {"toolCall": {"name": "read_file", "args": {}}},
+             {"decision": "allow"}),
+        )
+        for agent, flags, request, fallback in cases:
+            for upgrade in (False, True):
+                with self.subTest(agent=agent.name, upgrade=upgrade):
+                    self.check_legacy_hook_removal(agent, flags, request, fallback, upgrade)
+
+    def check_legacy_hook_removal(self, agent, flags, request, fallback, upgrade):
+        with tempfile.TemporaryDirectory(prefix="approval test ") as temporary:
+            workspace = Path(temporary).resolve()
+            settings = workspace / agent.directory
+            config_path = settings / agent.project_settings
+            script = config_path.parent / "hooks" / SOURCE.name
+            script.parent.mkdir(parents=True)
+            script.write_bytes(SOURCE.read_bytes())
+            arguments = approval_hook.python_arguments(script, flags)
+            handler = {
+                "type": "command",
+                "command": shlex.join(arguments),
+                "statusMessage": agent.hook_status,
+            }
+            if agent is approval_hook.CLAUDE:
+                handler.update(command=arguments[0], args=arguments[1:])
+            elif agent is approval_hook.AGY and sys.platform == "win32":
+                handler["command"] = approval_hook.windows_install_command(arguments, executable="powershell.exe")
+            key, event = approval_hook.approval_group_keys(agent)
+            approval_hook.write_hook_config(
+                config_path, {key: {event: [{"hooks": [handler]}]}},
+            )
+            if upgrade:
+                approval_hook.install_hook(workspace, agent=agent)
+                approval_hook.install_hook(workspace, workspace_only=True, agent=agent)
+
+            self.assertEqual(approval_hook.uninstall_hook(workspace, agent=agent), 0)
+            self.assertIsNone(approval_hook.installation_at(settings, "project", agent))
+            cached = subprocess.run(arguments, input=json.dumps(request), capture_output=True, text=True, check=True)
+            self.assertEqual(cached.stderr, "")
+            self.assertEqual(json.loads(cached.stdout) if cached.stdout else None, fallback)
+
+            approval_hook.install_hook(workspace, agent=agent)
+            self.assertTrue(script.read_bytes().startswith(SOURCE.read_bytes()))
+
+    def test_claude_removal_preserves_script_referenced_by_encoded_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary).resolve()
+            settings = workspace / ".claude"
+            settings.mkdir()
+            agent = approval_hook.CLAUDE
+            with mock.patch.object(approval_hook.Agent, "home", return_value=settings):
+                with mock.patch.object(sys, "platform", "win32"):
+                    approval_hook.install_hook(agent=agent)
+                    approval_hook.install_hook(workspace, agent=agent)
+                    self.assertEqual(approval_hook.uninstall_hook(agent=agent), 0)
+                    self.assertTrue(approval_hook.installation_at(settings, "project", agent)[2])
+                    self.assertEqual(approval_hook.uninstall_hook(workspace, agent=agent), 0)
+            self.assertFalse((settings / "hooks" / SOURCE.name).exists())
+
+    def test_hook_yields_when_installation_python_is_missing(self):
+        for agent in approval_hook.AGENTS.values():
+            with self.subTest(agent=agent.name), tempfile.TemporaryDirectory(prefix="approval test ") as temporary:
+                workspace = Path(temporary).resolve()
+                settings = workspace / agent.directory
+                settings.mkdir()
+                with mock.patch.object(sys, "executable", str(workspace / "missing-python.exe")):
+                    approval_hook.install_hook(workspace, agent=agent)
+                config = approval_hook.hook_config(settings / agent.project_settings)
+                key, event = approval_hook.approval_group_keys(agent)
+                handler = config[key][event][0]["hooks"][0]
+                cached = subprocess.run(hook_argv(handler), input="{}", capture_output=True, text=True, check=True)
+                fallback = {"decision": "allow"} if agent is approval_hook.AGY else None
+                self.assertEqual(cached.stderr, "")
+                self.assertEqual(json.loads(cached.stdout) if cached.stdout else None, fallback)
+
     def test_claude_project_registration_and_workspace_scope(self):
         def request(workspace, target):
             return {
@@ -148,12 +262,14 @@ class ApprovalHookTests(unittest.TestCase):
                 self.assertEqual(installed[name], original[name])
             self.assertIn("workspace-only", cli("hooks", agent, "."))
             handler = groups[-1]["hooks"][0]
-            if "args" in handler:
-                hook_command = [handler["command"], *handler["args"]]
-            elif sys.platform == "win32" and "commandWindows" in handler:
-                hook_command = handler["commandWindows"].split()
-            else:
-                hook_command = shlex.split(handler["command"])
+            hook_command = hook_argv(handler)
+
+            def run_hook(target):
+                return subprocess.run(
+                    hook_command,
+                    cwd=workspace, env=env, input=json.dumps(make_request(workspace, target), ensure_ascii=False),
+                    check=True, capture_output=True, encoding="utf-8",
+                )
 
             for target, expected in (
                 (workspace / "노트.txt", approved),
@@ -161,17 +277,16 @@ class ApprovalHookTests(unittest.TestCase):
                 (Path("relative.txt"), fallback),
             ):
                 with self.subTest(target=target):
-                    result = subprocess.run(
-                        hook_command,
-                        cwd=workspace, env=env, input=json.dumps(make_request(workspace, target), ensure_ascii=False),
-                        check=True, capture_output=True, encoding="utf-8",
-                    )
+                    result = run_hook(target)
                     response = json.loads(result.stdout) if result.stdout else None
                     self.assertEqual(response, expected, result.stderr)
 
             cli("uninstall", agent, ".")
             self.assertEqual(json.loads(config.read_text(encoding="utf-8")), original)
             self.assertFalse(script.exists())
+            cached = run_hook(workspace / "노트.txt")
+            self.assertEqual(cached.stderr, "")
+            self.assertEqual(json.loads(cached.stdout) if cached.stdout else None, fallback)
 
 
 class LaunchTests(unittest.TestCase):

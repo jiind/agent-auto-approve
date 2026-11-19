@@ -21,7 +21,7 @@ uv tool install agent-auto-approve
 Download the wheel (`.whl`) from the release's **Assets**. Run the command below in your download directory and substitute the filename if you downloaded a different version. [GitHub Releases](https://github.com/jiind/agent-auto-approve/releases/latest)
 
 ```sh
-uv tool install ./agent_auto_approve-0.1.1-py3-none-any.whl
+uv tool install ./agent_auto_approve-0.1.2-py3-none-any.whl
 ```
 
 Check that the CLI runs after installation.
@@ -41,6 +41,8 @@ agent-auto-approve install . --workspace-only
 agent-auto-approve hooks .
 ```
 
+After registering a Codex hook, `install` asks the shared local app server to reload its configuration when available. Its existing chats can pick up the hook without restarting. For sessions running separately, open a new Codex chat to load the registration. Review new or changed hooks using `/hooks` in the CLI or Settings → Hooks in the desktop app. [Codex hook trust](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)
+
 To try the hook in a single new Codex session, run this command from the project directory.
 
 ```sh
@@ -56,9 +58,9 @@ agent-auto-approve install --claude . --workspace-only
 agent-auto-approve hooks --claude .
 ```
 
-To apply the hook to a single new Claude Code session, run `agent-auto-approve launch --claude --workspace-only`.
+Claude Code watches its settings files, so a running session can pick up hook changes without restarting. To apply the hook to a single new Claude Code session, run `agent-auto-approve launch --claude --workspace-only`. [Claude Code settings reload](https://code.claude.com/docs/en/settings#when-edits-take-effect)
 
-Use `--agy` for Antigravity CLI. From a project root containing `.agents`, register the hook, check the registration, and then run `agy`. [Antigravity CLI reference](https://antigravity.google/docs/cli/reference/)
+Use `--agy` for Antigravity CLI. From a project root containing `.agents`, register the hook, check the registration, and then run `agy`. Use `/hooks` to see what the running session has loaded. [Antigravity hooks](https://antigravity.google/docs/hooks)
 
 ```sh
 agent-auto-approve install --agy . --workspace-only
@@ -111,6 +113,8 @@ If a global hook from this tool is registered for the same agent, a project `ins
 ## Uninstall
 
 To remove a project hook, run `agent-auto-approve uninstall .` from the project root. To remove a global hook, run `agent-auto-approve uninstall`. This also works when the global settings are outside your home directory. Add `--claude` for Claude Code or `--agy` for Antigravity. The tool removes only hooks it registered.
+
+An open session that already loaded the removed hook can continue with its normal approval flow. Codex's shared local app server can reload the removal immediately. For older registrations, `uninstall` leaves a compatibility script for open sessions. Close sessions that loaded an older registration before removing the CLI, since their cached hook command still uses its Python interpreter.
 
 After removing the registered hooks, uninstall the CLI.
 
