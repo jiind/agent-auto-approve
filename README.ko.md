@@ -21,7 +21,7 @@ uv tool install agent-auto-approve
 릴리스의 **Assets**에서 wheel 파일(`.whl`)을 다운로드합니다. 다운로드한 폴더에서 아래 명령을 실행하고, 다른 버전을 받았다면 파일명을 바꿉니다. [GitHub Releases](https://github.com/jiind/agent-auto-approve/releases/latest)
 
 ```sh
-uv tool install ./agent_auto_approve-0.1.2-py3-none-any.whl
+uv tool install ./agent_auto_approve-0.1.3-py3-none-any.whl
 ```
 
 설치가 끝나면 명령이 실행되는지 확인합니다.
@@ -34,7 +34,7 @@ agent-auto-approve --help
 
 `install`과 `launch`에서 `--workspace-only`를 생략하면 훅에 전달되는 승인 요청에 작업 경로 제한이 적용되지 않습니다. 작업 디렉터리 안에서만 자동 승인하려면 아래 예시처럼 이 옵션을 붙입니다.
 
-설정할 프로젝트의 루트로 이동합니다. `.codex` 디렉터리가 있는 프로젝트에서 다음 명령으로 작업 범위 제한을 켜고 훅을 등록한 뒤 확인할 수 있습니다.
+설정할 프로젝트의 루트로 이동합니다. 다음 명령으로 작업 범위 제한을 켜고 훅을 등록한 뒤 확인할 수 있습니다. `.codex` 디렉터리가 없으면 설치할 때 생성합니다.
 
 ```sh
 agent-auto-approve install . --workspace-only
@@ -72,7 +72,7 @@ agy
 
 | 명령 | 동작 |
 | --- | --- |
-| `agent-auto-approve install [DIR] [--workspace-only]` | `DIR`을 지정하면 프로젝트에, 생략하면 사용자 전역에 훅을 등록합니다. 프로젝트에 대상 에이전트의 `.codex`, `.claude` 또는 `.agents`가 있어야 합니다. |
+| `agent-auto-approve install [DIR] [--workspace-only]` | 기존 디렉터리 `DIR`을 지정하면 프로젝트에, 생략하면 사용자 전역에 훅을 등록합니다. Codex는 `DIR/.codex`가 없으면 생성합니다. Claude Code는 `DIR/.claude`가, Antigravity는 `DIR/.agents`가 있어야 합니다. |
 | `agent-auto-approve launch [--claude] [--workspace-only]` | 운영체제를 감지하고 훅을 적용한 새 세션을 시작합니다. Codex는 임시 훅 스크립트를, Claude Code는 임시 설정 파일을 사용하며 세션이 끝나면 해당 파일을 제거합니다. |
 | `agent-auto-approve find [DIR] [--agy] [--claude] [--codex]` | `.agents`, `.claude`, `.codex` 디렉터리의 절대 경로를 한 줄에 하나씩 출력합니다. 옵션을 조합하면 선택한 디렉터리를, 생략하면 지원하는 디렉터리를 모두 찾습니다. |
 | `agent-auto-approve hooks [DIR]` | 등록된 훅의 범위, 승인 모드, 설정 파일의 절대 경로를 출력합니다. |
