@@ -1,5 +1,7 @@
-# 보안 문제 제보
+# Reporting security issues
 
-자동 승인 범위나 권한 처리에 관한 보안 문제는 [GitHub 비공개 보안 제보](https://github.com/jiind/agent-auto-approve/security/advisories/new)로 보내 주세요. 비공개 제보 양식을 사용할 수 없으면 공개 이슈에 비공개 연락 방법만 문의해 주세요.
+**English** · [한국어](SECURITY.ko.md)
 
-영향을 받는 버전, 운영체제, 사용한 에이전트와 버전, 적용한 승인 모드, 예상 동작과 실제 동작을 알려 주세요. 공유할 로그와 예시에서 토큰, 개인 경로, 비공개 프로젝트 정보를 제거해 주세요.
+Use GitHub's private reporting form for security issues involving automatic approval scope or permission handling. If you cannot use the form, open a public issue asking how to contact us privately. [Submit a private security report](https://github.com/jiind/agent-auto-approve/security/advisories/new)
+
+Include the affected version, operating system, agent and its version, approval mode, and what you expected and observed. Remove tokens, personal paths, and private project information from any logs or examples you share.

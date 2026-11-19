@@ -1,45 +1,64 @@
 # Agent Auto Approve
 
-`agent-auto-approve`는 Codex CLI, Claude Code, Antigravity CLI의 도구 승인 훅을 관리하는 Python CLI입니다. 프로젝트별 또는 전역으로 등록할 수 있습니다. Codex와 Claude Code는 새 세션 하나에 적용할 수도 있습니다.
+**English** · [한국어](https://github.com/jiind/agent-auto-approve/blob/main/README.ko.md)
 
-## 빠른 시작
+`agent-auto-approve` is a Python CLI for managing tool approval hooks for Codex CLI, Claude Code, and Antigravity CLI. You can register hooks for a project or for your user account. With Codex and Claude Code, you can also apply a hook to a single new session.
 
-CLI는 Python 3.8 이상에서 실행됩니다. 아래 설치 예시에는 `uv`를 사용합니다. `launch`는 대상 에이전트의 CLI를 PATH에서 찾습니다. Windows에서 Claude Code 세션을 시작하려면 네이티브 `claude.exe`가 필요합니다. Claude Code 훅은 [`args`를 지원하는 2.1.139 이상](https://code.claude.com/docs/en/changelog)을 사용합니다.
+## Installation
 
-`pyproject.toml`이 있는 이 저장소의 루트에서 CLI를 설치합니다.
+The CLI requires Python 3.8 or later. Both installation methods use `uv`. [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+
+### From PyPI
+
+Install using the package name. [PyPI package](https://pypi.org/project/agent-auto-approve/)
 
 ```sh
-git clone https://github.com/jiind/agent-auto-approve.git
-cd agent-auto-approve
-uv tool install .
+uv tool install agent-auto-approve
+```
+
+### From GitHub Releases
+
+Download the wheel (`.whl`) from the release's **Assets**. Run the command below in your download directory and substitute the filename if you downloaded a different version. [GitHub Releases](https://github.com/jiind/agent-auto-approve/releases/latest)
+
+```sh
+uv tool install ./agent_auto_approve-0.1.1-py3-none-any.whl
+```
+
+Check that the CLI runs after installation.
+
+```sh
 agent-auto-approve --help
 ```
 
-`install`과 `launch`에서 `--workspace-only`를 생략하면 훅에 전달되는 승인 요청에 작업 경로 제한이 적용되지 않습니다. 작업 디렉터리 안에서만 자동 승인하려면 아래 예시처럼 이 옵션을 붙입니다.
+## Quick start
 
-설정할 프로젝트의 루트로 이동합니다. `.codex` 디렉터리가 있는 프로젝트에서 다음 명령으로 작업 범위 제한을 켜고 훅을 등록한 뒤 확인할 수 있습니다.
+By default, `install` and `launch` apply no workspace path restriction to approval requests passed to the hook. Add `--workspace-only` as shown below to limit automatic approval to your workspace.
+
+Go to the root of the project you want to set up. For a project with a `.codex` directory, register a hook scoped to the workspace and check the registration.
 
 ```sh
 agent-auto-approve install . --workspace-only
 agent-auto-approve hooks .
 ```
 
-새 Codex 세션 하나에서 써보려면 해당 프로젝트에서 다음 명령을 실행합니다.
+To try the hook in a single new Codex session, run this command from the project directory.
 
 ```sh
 agent-auto-approve launch --workspace-only
 ```
 
-Claude Code는 `--claude`로 선택합니다. `.claude`가 있는 프로젝트 루트에서 아래 명령을 실행하면 작업 범위를 제한한 훅을 등록하고 확인할 수 있습니다.
+`launch` looks for the selected agent's CLI on your PATH. On Windows, launching Claude Code requires the native `claude.exe`. Claude Code hooks require version 2.1.139 or later for `args` support. [Claude Code changelog](https://code.claude.com/docs/en/changelog)
+
+Use `--claude` for Claude Code. From a project root containing `.claude`, register a hook scoped to the workspace and check the registration.
 
 ```sh
 agent-auto-approve install --claude . --workspace-only
 agent-auto-approve hooks --claude .
 ```
 
-Claude Code 세션 하나에만 적용하려면 `agent-auto-approve launch --claude --workspace-only`를 실행합니다.
+To apply the hook to a single new Claude Code session, run `agent-auto-approve launch --claude --workspace-only`.
 
-Antigravity CLI는 `--agy`로 선택합니다. `.agents`가 있는 프로젝트 루트에서 훅을 등록하고 확인한 뒤 `agy`를 실행합니다. [Antigravity CLI 공식 문서](https://antigravity.google/docs/cli/reference/)
+Use `--agy` for Antigravity CLI. From a project root containing `.agents`, register the hook, check the registration, and then run `agy`. [Antigravity CLI reference](https://antigravity.google/docs/cli/reference/)
 
 ```sh
 agent-auto-approve install --agy . --workspace-only
@@ -47,58 +66,65 @@ agent-auto-approve hooks --agy .
 agy
 ```
 
-## 명령
+## Commands
 
-| 명령 | 동작 |
+| Command | Behavior |
 | --- | --- |
-| `agent-auto-approve install [DIR] [--workspace-only]` | `DIR`을 지정하면 프로젝트에, 생략하면 사용자 전역에 훅을 등록합니다. 프로젝트에 대상 에이전트의 `.codex`, `.claude` 또는 `.agents`가 있어야 합니다. |
-| `agent-auto-approve launch [--claude] [--workspace-only]` | 운영체제를 감지하고 훅을 적용한 새 세션을 시작합니다. Codex는 임시 훅 스크립트를, Claude Code는 임시 설정 파일을 사용하며 세션이 끝나면 해당 파일을 제거합니다. |
-| `agent-auto-approve find [DIR] [--agy] [--claude] [--codex]` | `.agents`, `.claude`, `.codex` 디렉터리의 절대 경로를 한 줄에 하나씩 출력합니다. 옵션을 조합하면 선택한 디렉터리를, 생략하면 지원하는 디렉터리를 모두 찾습니다. |
-| `agent-auto-approve hooks [DIR]` | 등록된 훅의 범위, 승인 모드, 설정 파일의 절대 경로를 출력합니다. |
-| `agent-auto-approve uninstall [DIR] [--all]` | `DIR`을 지정하면 프로젝트의 훅을, 생략하면 전역 훅을 제거합니다. `--all`은 지정한 `DIR` 아래를 재귀 탐색하며, 이때 `DIR`을 생략하면 홈 아래를 탐색합니다. |
+| `agent-auto-approve install [DIR] [--workspace-only]` | Registers a project hook when you supply `DIR` and a global hook for your user account when you omit it. The project must contain the selected agent's `.codex`, `.claude`, or `.agents` directory. |
+| `agent-auto-approve launch [--claude] [--workspace-only]` | Detects the operating system and starts a new session with the hook. Codex uses a temporary hook script and Claude Code uses a temporary settings file. The temporary file is removed when the session ends. |
+| `agent-auto-approve find [DIR] [--agy] [--claude] [--codex]` | Prints absolute paths to `.agents`, `.claude`, and `.codex` directories, one per line. Combine agent flags to select specific directory types. With no flags, it searches for all supported types. |
+| `agent-auto-approve hooks [DIR]` | Shows the scope, approval mode, and absolute settings file path for registered hooks. |
+| `agent-auto-approve uninstall [DIR] [--all]` | Removes the project hook when you supply `DIR` and the global hook when you omit it. `--all` searches recursively under `DIR` or under your home directory if you omit `DIR`. |
 
-`install`, `hooks`, `uninstall`에는 `--agy`, `--claude`, `--codex` 중 하나를 지정할 수 있습니다. `launch`에는 `--claude` 또는 `--codex`를 지정할 수 있습니다. 이 명령들의 기본 대상은 Codex입니다.
+`install`, `hooks`, and `uninstall` accept one of `--agy`, `--claude`, and `--codex`. `launch` accepts `--claude` or `--codex`. These commands default to Codex.
 
-| 대상 | 전역 등록 파일 | 프로젝트 등록 파일 |
+| Agent | Global settings file | Project settings file |
 | --- | --- | --- |
-| Codex | `CODEX_HOME/hooks.json`, 기본 `~/.codex/hooks.json` | `DIR/.codex/hooks.json` |
-| Claude Code | `CLAUDE_CONFIG_DIR/settings.json`, 기본 `~/.claude/settings.json` | `DIR/.claude/settings.local.json` |
+| Codex | `CODEX_HOME/hooks.json`, defaults to `~/.codex/hooks.json` | `DIR/.codex/hooks.json` |
+| Claude Code | `CLAUDE_CONFIG_DIR/settings.json`, defaults to `~/.claude/settings.json` | `DIR/.claude/settings.local.json` |
 | Antigravity CLI | `~/.gemini/config/hooks.json` | `DIR/.agents/hooks.json` |
 
-Antigravity는 이 훅 설정 파일을 CLI, 앱, IDE에서 공통으로 읽습니다. [Antigravity 훅 설정 위치](https://antigravity.google/docs/hooks)
+The Antigravity CLI, app, and IDE read the same hook settings files. [Antigravity hook settings](https://antigravity.google/docs/hooks)
 
-`find`와 `hooks`는 지정한 디렉터리와 그 하위를 탐색합니다. `DIR`을 생략하면 사용자 홈에서 시작합니다. 인자 없는 `hooks`는 홈 밖에 지정한 대상 에이전트의 전역 설정 디렉터리도 확인합니다. 접근할 수 없는 디렉터리는 건너뜁니다.
+`find` and `hooks` search the specified directory and its descendants. When you omit `DIR`, the search starts in your home directory. In that case, `hooks` also checks the selected agent's global configuration directory if it is set outside your home directory. The commands skip inaccessible directories.
 
-터미널에서는 진행 줄을 `디렉터리명...`으로 갱신하다가 대상을 찾으면 `디렉터리명... found`로 표시합니다. 색상을 지원하는 터미널에서는 `found`만 초록색입니다. 탐색이 끝나면 그 줄을 지우고 결과를 출력합니다.
+In a terminal, the progress line shows `directory...` and changes to `directory... found` when it finds a match. In terminals that support color, only `found` appears in green. The command clears the progress line before printing the results.
 
-`agent-auto-approve --help`로 명령 목록을 확인하고, `agent-auto-approve find --help`처럼 명령 뒤에 `--help`를 붙여 해당 명령의 인자와 옵션을 확인할 수 있습니다. `-h`도 사용할 수 있습니다.
+Run `agent-auto-approve --help` to list commands. Add `--help` to a command, as in `agent-auto-approve find --help`, to see its arguments and options. You can also use `-h`.
 
-## 자동 승인 범위
+## Automatic approval scope
 
-기본 모드는 훅에 전달된 도구 승인 요청을 자동 승인합니다. 사용자의 답변이 필요한 Claude Code와 Antigravity의 질문은 기존 흐름을 따릅니다. `--workspace-only`를 붙이면 대상 경로와 해당하는 경우 명령 실행 위치가 아래 기준 안에 있다고 확인된 경우에만 자동 승인합니다.
+By default, the hook automatically approves tool approval requests it receives. Claude Code and Antigravity questions that require a user response use their usual prompt flow. With `--workspace-only`, the hook approves a request only when it can verify that the target path and, where applicable, the command's working directory are within the boundary below.
 
-| 설정 방법 | 기준 디렉터리 |
+| Setup command | Workspace boundary |
 | --- | --- |
-| `agent-auto-approve install --workspace-only` | Codex는 세션의 작업 디렉터리, Claude Code는 세션이 시작된 프로젝트 루트, Antigravity는 훅의 `workspacePaths`에 전달된 작업 디렉터리를 사용합니다. |
-| `agent-auto-approve install DIR --workspace-only` | 지정한 프로젝트 루트 `DIR` |
-| `agent-auto-approve launch --workspace-only` | `launch`를 실행한 디렉터리 |
+| `agent-auto-approve install --workspace-only` | Codex uses the session's working directory. Claude Code uses the project root where the session started. Antigravity uses the working directories supplied in the hook's `workspacePaths`. |
+| `agent-auto-approve install DIR --workspace-only` | The specified project root `DIR` |
+| `agent-auto-approve launch --workspace-only` | The directory where you ran `launch` |
 
-경로 판별은 단순한 POSIX `touch`·`mkdir` 명령, Codex의 명시적인 파일시스템 권한 요청, Claude Code와 Antigravity의 절대 경로를 지정한 기본 파일 도구를 지원합니다. Antigravity는 파일 읽기·생성·편집과 디렉터리 목록의 명시적 경로를 확인합니다. Antigravity 명령 요청에 실행 디렉터리(`Cwd`)가 없으면 명령의 대상 경로가 절대 경로일 때만 확인합니다. 작업 범위 밖의 경로나 확인하기 어려운 요청은 각 에이전트의 기존 승인 절차로 넘어갑니다. 예를 들어 `~/work/test`가 기준일 때 `touch ~/note.txt`는 홈 디렉터리에 파일을 생성하므로 기존 승인 절차를 따릅니다.
+Path checks support simple POSIX `touch` and `mkdir` commands, explicit Codex filesystem permission requests, and basic Claude Code and Antigravity file tools that receive absolute paths. For Antigravity, the hook checks explicit paths for file reads, creation, edits, and directory listings. If an Antigravity command request omits the working directory (`Cwd`), the hook can check the target only when it is an absolute path. Requests involving paths outside the workspace or paths the hook cannot verify go through the agent's usual approval flow. For example, if the boundary is `~/work/test`, `touch ~/note.txt` goes through the usual approval flow because it would create a file in your home directory.
 
-Claude Code의 명시적인 거부 규칙, 관리형 훅 설정, 작업 공간 신뢰 정책은 계속 적용됩니다. 네트워크 샌드박스 승인 창은 별도 경로로 처리됩니다. 전역 훅과 프로젝트 훅을 함께 설치하면 두 등록이 함께 적용될 수 있으므로, 작업 범위 제한이 필요하면 적용되는 등록의 모드를 확인합니다. [Claude Code 훅 문서](https://code.claude.com/docs/en/hooks#permissionrequest)
+Claude Code's explicit deny rules, managed hook settings, and workspace trust policies still apply. Network sandbox prompts are handled separately. A global hook and a project hook can both apply to the same session. Check the mode of each applicable registration if you need approval limited to the workspace. [Claude Code hook reference](https://code.claude.com/docs/en/hooks#permissionrequest)
 
-같은 에이전트에 이 도구의 전역 훅이 등록돼 있으면 프로젝트 `install DIR` 또는 `launch` 전에 전역 설정 경로와 승인 모드를 경고하고 계속할지 묻습니다. `y`를 입력하면 진행하고, `n`이나 빈 입력이면 중단합니다.
+If a global hook from this tool is registered for the same agent, a project `install DIR` or `launch` shows the global settings path and approval mode and asks whether to continue. Enter `y` to continue. Enter `n` or press Enter without a response to cancel.
 
-## 제거
+## Uninstall
 
-프로젝트 루트에서 `agent-auto-approve uninstall .`을 실행하면 해당 프로젝트의 등록을 제거합니다. 전역 등록은 `agent-auto-approve uninstall`로 제거할 수 있으며, 홈 밖에 설정한 전역 등록도 이 명령에 해당합니다. Claude Code는 `--claude`, Antigravity는 `--agy`를 붙입니다. 이 도구가 제거하는 범위는 자신이 등록한 훅입니다.
+To remove a project hook, run `agent-auto-approve uninstall .` from the project root. To remove a global hook, run `agent-auto-approve uninstall`. This also works when the global settings are outside your home directory. Add `--claude` for Claude Code or `--agy` for Antigravity. The tool removes only hooks it registered.
 
-등록된 훅을 제거한 뒤 다음 명령으로 CLI를 제거할 수 있습니다.
+After removing the registered hooks, uninstall the CLI.
 
 ```sh
 uv tool uninstall agent-auto-approve
 ```
 
-## 패키지 빌드
+## Building the package
 
-저장소 루트에서 `uv build`를 실행하면 `dist/`에 wheel과 소스 배포 파일이 생성됩니다.
+To install from source, clone the repository and run `uv tool install .` from the root directory containing `pyproject.toml`.
+
+Run `uv build` from the repository root to create a wheel and a source distribution in `dist/`.
+
+## Contributing and reporting security issues
+
+- [Contributing guide](https://github.com/jiind/agent-auto-approve/blob/main/CONTRIBUTING.md)
+- [Reporting security issues](https://github.com/jiind/agent-auto-approve/blob/main/SECURITY.md)
