@@ -322,7 +322,7 @@ def write_atomically(path, data):
 
 
 def windows_install_command(arguments, *, executable=None):
-    # Forward stdin bytes directly to Python without a PowerShell text pipeline.
+    # Redirect stdout so .NET passes the original stdin handle without a BOM.
     launch = {"argv": arguments, "command_line": subprocess.list2cmdline(arguments[1:])}
     encoded_arguments = base64.b64encode(json.dumps(launch).encode("ascii")).decode("ascii")
     program = (
@@ -332,12 +332,10 @@ def windows_install_command(arguments, *, executable=None):
         "$start.FileName = $launch.argv[0]\n"
         "$start.Arguments = $launch.command_line\n"
         "$start.UseShellExecute = $false\n"
-        "$start.RedirectStandardInput = $true\n"
+        "$start.RedirectStandardOutput = $true\n"
         "$process = [Diagnostics.Process]::Start($start)\n"
         "try {\n"
-        "  $inputStream = $process.StandardInput.BaseStream\n"
-        "  [Console]::OpenStandardInput().CopyTo($inputStream)\n"
-        "  $inputStream.Close()\n"
+        "  $process.StandardOutput.BaseStream.CopyTo([Console]::OpenStandardOutput())\n"
         "  $process.WaitForExit()\n"
         "  exit $process.ExitCode\n"
         "} finally { $process.Dispose() }\n"
