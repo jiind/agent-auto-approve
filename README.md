@@ -21,7 +21,7 @@ uv tool install agent-auto-approve
 Download the wheel (`.whl`) from the release's **Assets**. Run the command below in your download directory and substitute the filename if you downloaded a different version. [GitHub Releases](https://github.com/jiind/agent-auto-approve/releases/latest)
 
 ```sh
-uv tool install ./agent_auto_approve-0.1.2-py3-none-any.whl
+uv tool install ./agent_auto_approve-0.1.3-py3-none-any.whl
 ```
 
 Check that the CLI runs after installation.
@@ -34,7 +34,7 @@ agent-auto-approve --help
 
 By default, `install` and `launch` apply no workspace path restriction to approval requests passed to the hook. Add `--workspace-only` as shown below to limit automatic approval to your workspace.
 
-Go to the root of the project you want to set up. For a project with a `.codex` directory, register a hook scoped to the workspace and check the registration.
+Go to the root of the project you want to set up. Register a hook scoped to the workspace and check the registration. The installer creates `.codex` if needed.
 
 ```sh
 agent-auto-approve install . --workspace-only
@@ -72,7 +72,7 @@ agy
 
 | Command | Behavior |
 | --- | --- |
-| `agent-auto-approve install [DIR] [--workspace-only]` | Registers a project hook when you supply `DIR` and a global hook for your user account when you omit it. The project must contain the selected agent's `.codex`, `.claude`, or `.agents` directory. |
+| `agent-auto-approve install [DIR] [--workspace-only]` | Registers a project hook when you supply an existing `DIR` and a global hook for your user account when you omit it. For Codex, creates `DIR/.codex` if needed. Claude Code requires `DIR/.claude` and Antigravity requires `DIR/.agents`. |
 | `agent-auto-approve launch [--claude] [--workspace-only]` | Detects the operating system and starts a new session with the hook. Codex uses a temporary hook script and Claude Code uses a temporary settings file. The temporary file is removed when the session ends. |
 | `agent-auto-approve find [DIR] [--agy] [--claude] [--codex]` | Prints absolute paths to `.agents`, `.claude`, and `.codex` directories, one per line. Combine agent flags to select specific directory types. With no flags, it searches for all supported types. |
 | `agent-auto-approve hooks [DIR]` | Shows the scope, approval mode, and absolute settings file path for registered hooks. |

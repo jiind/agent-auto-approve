@@ -354,6 +354,7 @@ class GlobalHookConfirmationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             workspace = root / "project"
+            workspace.mkdir()
             for agent, config_dir, settings in (
                 ("--codex", ".codex", "hooks.json"),
                 ("--claude", ".claude", "settings.local.json"),
@@ -367,7 +368,8 @@ class GlobalHookConfirmationTests(unittest.TestCase):
                         CLAUDE_CONFIG_DIR=str(home / "custom-claude"),
                     )
                     project_settings = workspace / config_dir / settings
-                    project_settings.parent.mkdir(parents=True)
+                    if agent != "--codex":
+                        project_settings.parent.mkdir()
                     subprocess.run(
                         [sys.executable, str(SOURCE), "install", agent, "--workspace-only"],
                         cwd=workspace, env=env, input="", check=True, capture_output=True, text=True,
@@ -383,6 +385,8 @@ class GlobalHookConfirmationTests(unittest.TestCase):
                             self.assertIn("global approval hook (workspace-only)", result.stderr)
                             self.assertIn("Continue? [y/n]", result.stderr)
                             self.assertEqual(project_settings.exists(), status == 0)
+                            if agent == "--codex":
+                                self.assertEqual(project_settings.parent.exists(), status == 0)
 
     def test_launch_confirms_existing_global_hook(self):
         with tempfile.TemporaryDirectory() as temporary:

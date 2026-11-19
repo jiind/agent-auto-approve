@@ -5,7 +5,7 @@
 ## 사용자가 설정을 요청했을 때
 
 1. `agent-auto-approve --help`로 CLI가 설치되어 있는지 확인합니다. 설치가 필요하면 `pyproject.toml`이 있는 이 저장소의 루트에서 `uv tool install .`을 실행합니다. 저장소 루트와 훅을 등록할 프로젝트 루트는 서로 다를 수 있습니다.
-2. 프로젝트에 등록하려면 대상 루트의 `.codex`, `.claude` 또는 `.agents`를 확인합니다. 위치를 모르면 `agent-auto-approve find DIR`에 `--codex`, `--claude` 또는 `--agy`를 붙여 탐색합니다. `install`의 `DIR`에는 찾은 설정 디렉터리의 상위 프로젝트 루트를 전달합니다.
+2. 프로젝트에 등록하려면 `install`의 `DIR`에 기존 프로젝트 루트를 전달합니다. Codex는 루트에 `.codex`가 없으면 생성합니다. Claude Code는 루트에 `.claude`가, Antigravity는 `.agents`가 있어야 합니다. 기존 설정 디렉터리의 위치를 모르면 `agent-auto-approve find DIR`에 `--codex`, `--claude` 또는 `--agy`를 붙여 탐색합니다.
 3. 아래 표에서 요청한 등록 범위의 명령을 사용합니다. 기본 대상은 Codex입니다. Claude Code는 `--claude`, Antigravity는 `--agy`로 선택합니다. `launch`의 대상은 Codex와 Claude Code입니다. 작업 범위 안에서만 자동 승인하도록 요청받았다면 등록 명령이나 `launch`에 `--workspace-only`를 추가합니다.
 4. 영구 등록 후 `hooks`의 결과에서 요청한 설정 파일 경로와 승인 모드를 확인합니다. 출력되는 모드는 `workspace-only` 또는 `all requests`입니다.
 

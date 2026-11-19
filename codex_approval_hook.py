@@ -801,12 +801,16 @@ def list_installations(search_root=None, *, agent=CODEX):
         print("No approval hook installations found.")
 
 
-def registration_location(project, agent):
+def registration_location(project, agent, *, create=False):
     if project is None:
         return "global", agent.home()
     workspace = project.expanduser().resolve()
     directory = workspace / agent.directory
-    if not directory.is_dir():
+    if create and agent is CODEX:
+        if not workspace.is_dir():
+            raise NotADirectoryError(f"Project path is not a directory: {workspace}")
+        directory.mkdir(exist_ok=True)
+    elif not directory.is_dir():
         raise FileNotFoundError(f"No {agent.directory} directory found in {workspace}")
     return "project", directory
 
@@ -857,7 +861,7 @@ def disabled_hook_script(agent):
 
 
 def install_hook(project=None, *, workspace_only=False, agent=CODEX):
-    scope, directory = registration_location(project, agent)
+    scope, directory = registration_location(project, agent, create=True)
     if project is None:
         hook_args = ["--workspace-only"] if workspace_only else []
         directory.mkdir(parents=True, exist_ok=True)
@@ -1157,7 +1161,9 @@ def main():
         for name, (usage, _) in ordered_commands
     }
     install_options = add_directory_argument(
-        commands["install"], "project containing .codex, .claude, or .agents. Omit DIR to install globally",
+        commands["install"],
+        "existing project directory. Codex creates .codex if missing. "
+        "Claude Code requires .claude and Antigravity requires .agents. Omit DIR to install globally",
         optional=True,
     )
     uninstall = commands["uninstall"]
