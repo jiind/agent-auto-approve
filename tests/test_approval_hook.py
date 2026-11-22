@@ -98,6 +98,38 @@ class ApprovalHookTests(unittest.TestCase):
             request, PERMISSION_ALLOW, None,
         )
 
+    def test_hooks_current_checks_project_root_and_global_registration(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            project = root / "project"
+            nested = project / "nested"
+            nested.mkdir(parents=True)
+            global_dir = root / "custom-codex"
+            env = dict(os.environ, CODEX_HOME=str(global_dir))
+
+            def cli(*args, answer=""):
+                return subprocess.run(
+                    [sys.executable, str(SOURCE), *args], cwd=project, env=env,
+                    input=answer, check=True, capture_output=True, text=True,
+                ).stdout
+
+            global_config = global_dir / "hooks.json"
+            project_config = project / ".codex" / "hooks.json"
+            nested_config = nested / ".codex" / "hooks.json"
+            self.assertIn(f"Registered Codex global hook (all requests) in {global_config}", cli("install"))
+            self.assertIn(
+                f"Registered Codex project hook (workspace-only) in {project_config}",
+                cli("install", ".", "--workspace-only", answer="y\n"),
+            )
+            cli("install", "nested", "--workspace-only", answer="y\n")
+
+            global_row = f"global\tall requests\t{global_config}"
+            project_row = f"project\tworkspace-only\t{project_config}"
+            nested_row = f"project\tworkspace-only\t{nested_config}"
+            self.assertEqual(cli("hooks", "--current").splitlines(), [global_row, project_row])
+            self.assertEqual(cli("hooks", "--current", "nested").splitlines(), [global_row, nested_row])
+            self.assertEqual(cli("hooks", ".").splitlines(), [project_row, nested_row])
+
     def test_codex_install_requests_reload_without_editing_user_config(self):
         for response in ({"result": {}}, {"error": {"message": "Reload unavailable"}}):
             with self.subTest(response=response), tempfile.TemporaryDirectory() as temporary:
@@ -261,6 +293,7 @@ class ApprovalHookTests(unittest.TestCase):
             for name in original.keys() - {event_key}:
                 self.assertEqual(installed[name], original[name])
             self.assertIn("workspace-only", cli("hooks", agent, "."))
+            self.assertIn(f"project\tworkspace-only\t{config}", cli("hooks", agent, "--current"))
             handler = groups[-1]["hooks"][0]
             hook_command = hook_argv(handler)
 

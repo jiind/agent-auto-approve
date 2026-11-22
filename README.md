@@ -38,8 +38,10 @@ Go to the root of the project you want to set up. Register a hook scoped to the 
 
 ```sh
 agent-auto-approve install . --workspace-only
-agent-auto-approve hooks .
+agent-auto-approve hooks --current
 ```
+
+The installation message shows the agent, registration scope, approval mode, and settings file path.
 
 After registering a Codex hook, `install` asks the shared local app server to reload its configuration when available. Its existing chats can pick up the hook without restarting. For sessions running separately, open a new Codex chat to load the registration. Review new or changed hooks using `/hooks` in the CLI or Settings → Hooks in the desktop app. [Codex hook trust](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)
 
@@ -55,7 +57,7 @@ Use `--claude` for Claude Code. From a project root containing `.claude`, regist
 
 ```sh
 agent-auto-approve install --claude . --workspace-only
-agent-auto-approve hooks --claude .
+agent-auto-approve hooks --claude --current
 ```
 
 Claude Code watches its settings files, so a running session can pick up hook changes without restarting. To apply the hook to a single new Claude Code session, run `agent-auto-approve launch --claude --workspace-only`. [Claude Code settings reload](https://code.claude.com/docs/en/settings#when-edits-take-effect)
@@ -64,7 +66,7 @@ Use `--agy` for Antigravity CLI. From a project root containing `.agents`, regis
 
 ```sh
 agent-auto-approve install --agy . --workspace-only
-agent-auto-approve hooks --agy .
+agent-auto-approve hooks --agy --current
 agy
 ```
 
@@ -75,7 +77,7 @@ agy
 | `agent-auto-approve install [DIR] [--workspace-only]` | Registers a project hook when you supply an existing `DIR` and a global hook for your user account when you omit it. For Codex, creates `DIR/.codex` if needed. Claude Code requires `DIR/.claude` and Antigravity requires `DIR/.agents`. |
 | `agent-auto-approve launch [--claude] [--workspace-only]` | Detects the operating system and starts a new session with the hook. Codex uses a temporary hook script and Claude Code uses a temporary settings file. The temporary file is removed when the session ends. |
 | `agent-auto-approve find [DIR] [--agy] [--claude] [--codex]` | Prints absolute paths to `.agents`, `.claude`, and `.codex` directories, one per line. Combine agent flags to select specific directory types. With no flags, it searches for all supported types. |
-| `agent-auto-approve hooks [DIR]` | Shows the scope, approval mode, and absolute settings file path for registered hooks. |
+| `agent-auto-approve hooks [DIR] [--current]` | Shows the scope, approval mode, and absolute settings file path for registered hooks. Use `--current` to check the project root and the selected agent's global registration. |
 | `agent-auto-approve uninstall [DIR] [--all]` | Removes the project hook when you supply `DIR` and the global hook when you omit it. `--all` searches recursively under `DIR` or under your home directory if you omit `DIR`. |
 
 `install`, `hooks`, and `uninstall` accept one of `--agy`, `--claude`, and `--codex`. `launch` accepts `--claude` or `--codex`. These commands default to Codex.
@@ -88,7 +90,9 @@ agy
 
 The Antigravity CLI, app, and IDE read the same hook settings files. [Antigravity hook settings](https://antigravity.google/docs/hooks)
 
-`find` and `hooks` search the specified directory and its descendants. When you omit `DIR`, the search starts in your home directory. In that case, `hooks` also checks the selected agent's global configuration directory if it is set outside your home directory. The commands skip inaccessible directories.
+`hooks --current` uses the current directory as the project root. Supply `DIR` to check a different project root. This checks the two registration locations directly.
+
+`find` and `hooks` without `--current` search the specified directory and its descendants. When you omit `DIR`, the search starts in your home directory. In that case, `hooks` also checks the selected agent's global configuration directory if it is set outside your home directory. The commands skip inaccessible directories.
 
 In a terminal, the progress line shows `directory...` and changes to `directory... found` when it finds a match. In terminals that support color, only `found` appears in green. The command clears the progress line before printing the results.
 
