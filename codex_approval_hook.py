@@ -585,15 +585,19 @@ def installation_at(directory, scope, agent):
     return None
 
 
+def approval_mode(workspace_only):
+    return "workspace-only" if workspace_only else "all requests"
+
+
 def confirm_with_global_hook(agent):
     registration = installation_at(agent.home(), "global", agent)
     if registration is None:
         return True
 
     config_path, workspace_only, _ = registration
-    mode = "workspace-only" if workspace_only else "all requests"
     print(
-        f"Warning: {agent.name} already has a global approval hook ({mode}) in {config_path}. "
+        f"Warning: {agent.name} already has a global approval hook ({approval_mode(workspace_only)}) "
+        f"in {config_path}. "
         "Both hooks may apply.",
         file=sys.stderr,
     )
@@ -750,8 +754,12 @@ def discover_installations(root, agent, *, include_global=False, progress=None, 
         if directory.name.casefold() == agent.directory
         and any(name.casefold() == agent.project_settings for name in files)
     )
+    yield from inspect_installations(chain(global_location, projects), agent, progress=progress)
+
+
+def inspect_installations(locations, agent, *, progress=None):
     found = set()
-    for scope, directory in chain(global_location, projects):
+    for scope, directory in locations:
         try:
             installation = installation_at(directory, scope, agent)
             if installation is None:
@@ -785,15 +793,22 @@ def find_agent_directories(search_root, directory_names):
                 write_result(directory, str(directory))
 
 
-def list_installations(search_root=None, *, agent=CODEX):
+def list_installations(search_root=None, *, agent=CODEX, current=False):
+    if current and search_root is None:
+        search_root = Path.cwd()
     root = resolve_search_root(search_root)
     found = False
     with search_output(root) as (progress, write_result):
-        for scope, directory, (config_path, workspace_only, script_exists) in discover_installations(
-            root, agent, include_global=search_root is None, progress=progress, report_skipped=False,
-        ):
+        if current:
+            locations = (("global", agent.home()), ("project", root / agent.directory))
+            installations = inspect_installations(locations, agent, progress=progress)
+        else:
+            installations = discover_installations(
+                root, agent, include_global=search_root is None, progress=progress, report_skipped=False,
+            )
+        for scope, directory, (config_path, workspace_only, script_exists) in installations:
             found = True
-            mode = "workspace-only" if workspace_only else "all requests"
+            mode = approval_mode(workspace_only)
             status = "" if script_exists else " (hook script missing)"
             write_result(directory, f"{scope}\t{mode}\t{config_path}{status}")
 
@@ -905,7 +920,7 @@ def install_hook(project=None, *, workspace_only=False, agent=CODEX):
         write_atomically(script, source)
         if updated != original:
             write_hook_config(config_path, updated)
-    print(f"Registered the {scope} hook in {config_path}")
+    print(f"Registered {agent.name} {scope} hook ({approval_mode(workspace_only)}) in {config_path}")
 
 
 def config_references_hook_script(text, script, agent):
@@ -1138,7 +1153,7 @@ def main():
         "uninstall": (f"[DIR] {target_flags} [--all]", "unregister the hook globally or in a project"),
         "launch": ("[--claude | --codex] [--workspace-only]", "start a session with the hook"),
         "find": (f"[DIR] {find_flags}", "find agent configuration directories"),
-        "hooks": (f"[DIR] {target_flags}", "show registered approval hooks"),
+        "hooks": (f"[DIR] {target_flags} [--current]", "show registered approval hooks"),
     }
     ordered_commands = sorted(command_help.items())
     width = max(map(len, command_help))
@@ -1178,7 +1193,12 @@ def main():
     hooks = commands["hooks"]
     hooks.description = "Show the scope, approval mode, and configuration path for registered hooks."
     hooks_options = add_directory_argument(
-        hooks, "directory to search recursively. Omit DIR to search the user home", optional=True,
+        hooks, "directory to search recursively. Omit DIR to search the user home. With --current, "
+        "use DIR as the project root or omit it to use the current directory", optional=True,
+    )
+    hooks_options.add_argument(
+        "--current", action="store_true",
+        help="check only the project root and the selected agent's global configuration",
     )
     find = commands["find"]
     find.description = "Print absolute paths. With no agent flags, search for all supported agents."
@@ -1218,7 +1238,7 @@ def main():
         launch = launch_claude if agent is CLAUDE else launch_codex
         return launch(workspace_only=args.workspace_only)
     elif args.command == "hooks":
-        list_installations(args.directory, agent=agent)
+        list_installations(args.directory, agent=agent, current=args.current)
     elif args.command == "find":
         find_agent_directories(args.directory, args.agent_directories)
     else:

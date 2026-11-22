@@ -38,8 +38,10 @@ agent-auto-approve --help
 
 ```sh
 agent-auto-approve install . --workspace-only
-agent-auto-approve hooks .
+agent-auto-approve hooks --current
 ```
+
+설치 완료 메시지에는 에이전트, 등록 범위, 승인 모드, 설정 파일 경로가 표시됩니다.
 
 Codex 훅을 등록한 뒤 공유 로컬 앱 서버에 연결할 수 있으면 `install`이 설정을 다시 읽도록 요청합니다. 그 서버에 연결된 대화에서는 재시작 없이 새 훅을 불러올 수 있습니다. 별도로 실행 중인 세션에서는 새 Codex 대화를 열면 등록이 적용됩니다. 처음 등록하거나 변경한 훅은 CLI의 `/hooks` 또는 데스크톱 앱의 설정 → 훅에서 검토합니다. [Codex 훅 검토 문서](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)
 
@@ -55,7 +57,7 @@ Claude Code는 `--claude`로 선택합니다. `.claude`가 있는 프로젝트 �
 
 ```sh
 agent-auto-approve install --claude . --workspace-only
-agent-auto-approve hooks --claude .
+agent-auto-approve hooks --claude --current
 ```
 
 Claude Code는 설정 파일 변경을 감시하므로 열린 세션에서도 재시작 없이 훅 변경을 읽습니다. 새 세션 하나에만 적용하려면 `agent-auto-approve launch --claude --workspace-only`를 실행합니다. [Claude Code 설정 갱신](https://code.claude.com/docs/en/settings#when-edits-take-effect)
@@ -64,7 +66,7 @@ Antigravity CLI는 `--agy`로 선택합니다. `.agents`가 있는 프로젝트 
 
 ```sh
 agent-auto-approve install --agy . --workspace-only
-agent-auto-approve hooks --agy .
+agent-auto-approve hooks --agy --current
 agy
 ```
 
@@ -75,7 +77,7 @@ agy
 | `agent-auto-approve install [DIR] [--workspace-only]` | 기존 디렉터리 `DIR`을 지정하면 프로젝트에, 생략하면 사용자 전역에 훅을 등록합니다. Codex는 `DIR/.codex`가 없으면 생성합니다. Claude Code는 `DIR/.claude`가, Antigravity는 `DIR/.agents`가 있어야 합니다. |
 | `agent-auto-approve launch [--claude] [--workspace-only]` | 운영체제를 감지하고 훅을 적용한 새 세션을 시작합니다. Codex는 임시 훅 스크립트를, Claude Code는 임시 설정 파일을 사용하며 세션이 끝나면 해당 파일을 제거합니다. |
 | `agent-auto-approve find [DIR] [--agy] [--claude] [--codex]` | `.agents`, `.claude`, `.codex` 디렉터리의 절대 경로를 한 줄에 하나씩 출력합니다. 옵션을 조합하면 선택한 디렉터리를, 생략하면 지원하는 디렉터리를 모두 찾습니다. |
-| `agent-auto-approve hooks [DIR]` | 등록된 훅의 범위, 승인 모드, 설정 파일의 절대 경로를 출력합니다. |
+| `agent-auto-approve hooks [DIR] [--current]` | 등록된 훅의 범위, 승인 모드, 설정 파일의 절대 경로를 출력합니다. `--current`를 붙이면 프로젝트 루트와 선택한 에이전트의 전역 등록을 확인합니다. |
 | `agent-auto-approve uninstall [DIR] [--all]` | `DIR`을 지정하면 프로젝트의 훅을, 생략하면 전역 훅을 제거합니다. `--all`은 지정한 `DIR` 아래를 재귀 탐색하며, 이때 `DIR`을 생략하면 홈 아래를 탐색합니다. |
 
 `install`, `hooks`, `uninstall`에는 `--agy`, `--claude`, `--codex` 중 하나를 지정할 수 있습니다. `launch`에는 `--claude` 또는 `--codex`를 지정할 수 있습니다. 이 명령들의 기본 대상은 Codex입니다.
@@ -88,7 +90,9 @@ agy
 
 Antigravity는 이 훅 설정 파일을 CLI, 앱, IDE에서 공통으로 읽습니다. [Antigravity 훅 설정 위치](https://antigravity.google/docs/hooks)
 
-`find`와 `hooks`는 지정한 디렉터리와 그 하위를 탐색합니다. `DIR`을 생략하면 사용자 홈에서 시작합니다. 인자 없는 `hooks`는 홈 밖에 지정한 대상 에이전트의 전역 설정 디렉터리도 확인합니다. 접근할 수 없는 디렉터리는 건너뜁니다.
+`hooks --current`는 현재 디렉터리를 프로젝트 루트로 봅니다. 다른 프로젝트를 확인하려면 `DIR`에 해당 루트를 지정합니다. 이 옵션은 프로젝트와 전역 설정 파일을 직접 확인합니다.
+
+`find`와 `--current`를 생략한 `hooks`는 지정한 디렉터리와 그 하위를 탐색합니다. `DIR`을 생략하면 사용자 홈에서 시작합니다. 인자 없는 `hooks`는 홈 밖에 지정한 대상 에이전트의 전역 설정 디렉터리도 확인합니다. 접근할 수 없는 디렉터리는 건너뜁니다.
 
 터미널에서는 진행 줄을 `디렉터리명...`으로 갱신하다가 대상을 찾으면 `디렉터리명... found`로 표시합니다. 색상을 지원하는 터미널에서는 `found`만 초록색입니다. 탐색이 끝나면 그 줄을 지우고 결과를 출력합니다.
 
